@@ -703,16 +703,22 @@
         const file = event.target.files[0];
         if (!file) return;
 
+        // Reset data and grid
+        allRowData = [];
+        if (gridApi) {
+          gridApi.setGridOption('rowData', []);
+        }
+
         Papa.parse(file, {
           header: true,
           skipEmptyLines: true,
           worker: true,
-          complete: function(results) {
+          chunk: function(results, parser) {
+            // Process each chunk of data
             const processedRows = results.data.map(row => {
               let auditData = {};
               try {
                 auditData = JSON.parse(row.AuditData || '{}');
-                console.log('audit_data: ', auditData);
               } catch (e) {
                 console.warn("Invalid AuditData JSON:", row.AuditData);
               }
@@ -726,13 +732,27 @@
               };
             });
 
-            allRowData = processedRows;
-            gridOptions.rowData = processedRows;
-            console.log('row Data: ', processedRows);
-            agGrid.createGrid(gridDiv, gridOptions);
+            // Append chunk to allRowData
+            allRowData = allRowData.concat(processedRows);
             
-            // Build facets after data is loaded
-            buildFacets(processedRows);
+            // Update grid with current data
+            if (gridApi) {
+              gridApi.setGridOption('rowData', allRowData);
+            }
+            
+            console.log(`Processed chunk: ${processedRows.length} rows, Total: ${allRowData.length} rows`);
+          },
+          complete: function() {
+            console.log(`Parsing complete! Total rows: ${allRowData.length}`);
+            
+            // Initialize grid if not already done
+            if (!gridApi) {
+              gridOptions.rowData = allRowData;
+              agGrid.createGrid(gridDiv, gridOptions);
+            }
+            
+            // Build facets after all data is loaded
+            buildFacets(allRowData);
             
             // Load filters from URL if any
             loadFiltersFromURL();
@@ -741,7 +761,7 @@
             if (window.location.search) {
               applyFilters();
             } else {
-              updateResultsCount(processedRows.length);
+              updateResultsCount(allRowData.length);
             }
           }
         });
