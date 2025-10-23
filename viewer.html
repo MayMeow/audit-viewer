@@ -6,9 +6,6 @@
   <title>🤓 MS365 Audit Viewer</title>
   <!-- PapaParse -->
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-  <!-- AG-Grid Theme -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community/styles/ag-grid.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community/styles/ag-theme-alpine.css">
 
   <style>
     * { box-sizing: border-box; }
@@ -391,7 +388,7 @@
       });
       
       if (gridApi) {
-        gridApi.setRowData(filtered);
+        gridApi.setGridOption('rowData', filtered);
       }
       
       updateResultsCount(filtered.length);
