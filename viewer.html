@@ -2,47 +2,309 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>🤓 MS365 Audit Viewer</title>
   <!-- PapaParse -->
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <!-- AG-Grid Theme -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community/styles/ag-grid.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community/styles/ag-theme-alpine.css">
 
   <style>
-    body { font-family: sans-serif; margin: 20px; }
-    #grid { height: 600px; width: 100%; }
+    * { box-sizing: border-box; }
+    body { font-family: sans-serif; margin: 0; padding: 0; }
+    
+    .container { display: flex; min-height: 100vh; }
+    
+    /* Sidebar styles */
+    #filterSidebar {
+      width: 280px;
+      background: #f5f5f5;
+      padding: 20px;
+      border-right: 1px solid #ddd;
+      overflow-y: auto;
+      max-height: 100vh;
+      position: sticky;
+      top: 0;
+    }
+    
+    #filterSidebar h3 {
+      margin-top: 0;
+      margin-bottom: 15px;
+      font-size: 18px;
+    }
+    
+    .filter-section {
+      margin-bottom: 20px;
+      padding-bottom: 15px;
+      border-bottom: 1px solid #ddd;
+    }
+    
+    .filter-section:last-child {
+      border-bottom: none;
+    }
+    
+    .filter-section h4 {
+      margin: 0 0 10px 0;
+      font-size: 14px;
+      font-weight: 600;
+      color: #333;
+    }
+    
+    .filter-option {
+      display: flex;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    
+    .filter-option input[type="checkbox"] {
+      margin-right: 8px;
+      cursor: pointer;
+    }
+    
+    .filter-option label {
+      cursor: pointer;
+      font-size: 13px;
+      color: #555;
+    }
+    
+    .filter-option .count {
+      margin-left: auto;
+      color: #999;
+      font-size: 12px;
+    }
+    
+    .filter-input {
+      width: 100%;
+      padding: 6px 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+    
+    .date-input {
+      width: 100%;
+      padding: 6px 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 12px;
+      margin-bottom: 5px;
+    }
+    
+    .clear-filters-btn {
+      width: 100%;
+      padding: 10px;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      margin-bottom: 15px;
+    }
+    
+    .clear-filters-btn:hover {
+      background: #0056b3;
+    }
+    
+    .active-filters {
+      margin-bottom: 15px;
+      font-size: 12px;
+    }
+    
+    .filter-tag {
+      display: inline-block;
+      background: #007bff;
+      color: white;
+      padding: 4px 8px;
+      border-radius: 3px;
+      margin: 2px;
+      font-size: 11px;
+    }
+    
+    .filter-tag .remove {
+      margin-left: 5px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    
+    .toggle-sidebar {
+      display: none;
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      z-index: 1000;
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 10px 15px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    
+    .results-count {
+      font-size: 13px;
+      color: #666;
+      margin-bottom: 10px;
+    }
+    
+    /* Main content area */
+    #mainContent {
+      flex: 1;
+      padding: 20px;
+      overflow: hidden;
+    }
+    
     #upload { margin-bottom: 10px; }
+    #grid { height: calc(100vh - 200px); width: 100%; }
+    
+    /* Mobile responsive */
+    @media (max-width: 768px) {
+      .container { flex-direction: column; }
+      
+      #filterSidebar {
+        position: fixed;
+        top: 0;
+        left: -280px;
+        width: 280px;
+        height: 100vh;
+        z-index: 999;
+        transition: left 0.3s ease;
+        box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+      }
+      
+      #filterSidebar.open {
+        left: 0;
+      }
+      
+      .toggle-sidebar {
+        display: block;
+      }
+      
+      #mainContent {
+        margin-top: 50px;
+      }
+    }
+    
+    .sidebar-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.5);
+      z-index: 998;
+    }
+    
+    .sidebar-overlay.visible {
+      display: block;
+    }
   </style>
 </head>
 <body>
-  <h2>🤓 Microsoft 365 Audit Viewer</h2>
-  <input type="file" id="upload" accept=".csv" />
+  <button class="toggle-sidebar" id="toggleSidebar">☰ Filters</button>
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+  
+  <div class="container">
+    <!-- Filter Sidebar -->
+    <aside id="filterSidebar">
+      <h3>🔍 Filters</h3>
+      
+      <button class="clear-filters-btn" id="clearAllFilters">Clear All Filters</button>
+      
+      <div class="active-filters" id="activeFilters"></div>
+      
+      <div class="results-count" id="resultsCount"></div>
+      
+      <!-- Operation Filter -->
+      <div class="filter-section">
+        <h4>Operation</h4>
+        <div id="operationFilters"></div>
+      </div>
+      
+      <!-- User Filter -->
+      <div class="filter-section">
+        <h4>User</h4>
+        <input type="text" class="filter-input" id="userFilter" placeholder="Search user..." />
+        <div id="userFilters"></div>
+      </div>
+      
+      <!-- File Name Filter -->
+      <div class="filter-section">
+        <h4>File Name</h4>
+        <input type="text" class="filter-input" id="fileNameFilter" placeholder="Search file name..." />
+      </div>
+      
+      <!-- Site URL Filter -->
+      <div class="filter-section">
+        <h4>Site URL</h4>
+        <input type="text" class="filter-input" id="siteUrlFilter" placeholder="Search site URL..." />
+      </div>
+      
+      <!-- IP Address Filter -->
+      <div class="filter-section">
+        <h4>IP Address</h4>
+        <input type="text" class="filter-input" id="ipAddressFilter" placeholder="Search IP..." />
+      </div>
+      
+      <!-- Date Range Filter -->
+      <div class="filter-section">
+        <h4>Date Range</h4>
+        <label style="font-size: 12px; color: #666;">From:</label>
+        <input type="date" class="date-input" id="dateFrom" />
+        <label style="font-size: 12px; color: #666;">To:</label>
+        <input type="date" class="date-input" id="dateTo" />
+      </div>
+    </aside>
+    
+    <!-- Main Content -->
+    <main id="mainContent">
+      <h2>🤓 Microsoft 365 Audit Viewer</h2>
+      <input type="file" id="upload" accept=".csv" />
 
-  <div id="grid" class="ag-theme-alpine"></div>
+      <div id="grid" class="ag-theme-alpine"></div>
 
-  <div id="detailView">
-    <h3>AuditData Details</h3>
-    <table id="detailTable"></table>
+      <div id="detailView">
+        <h3>AuditData Details</h3>
+        <table id="detailTable"></table>
+      </div>
+    </main>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/ag-grid-community/dist/ag-grid-community.min.noStyle.js"></script>
   <script>
+    let allRowData = [];
+    let gridApi = null;
+    let currentFilters = {
+      operations: new Set(),
+      users: new Set(),
+      fileName: '',
+      siteUrl: '',
+      ipAddress: '',
+      dateFrom: '',
+      dateTo: ''
+    };
+    
     const columnDefs = [
-      { headerName: "Time", field: "CreationDate", filter: true },
-      { headerName: "User", field: "UserId", filter: true },
-      { headerName: "Operation", field: "Operation", filter: true },
-      { headerName: "Site URL", field: "SiteUrl", filter: true },
-      { headerName: "File Name", field: "FileName", filter: true },
-      { headerName: "IP Address", field: "IPAddress", filter: true },
+      { headerName: "Time", field: "CreationDate", filter: true, width: 180 },
+      { headerName: "User", field: "UserId", filter: true, width: 200 },
+      { headerName: "Operation", field: "Operation", filter: true, width: 180 },
+      { headerName: "Site URL", field: "SiteUrl", filter: true, flex: 1 },
+      { headerName: "File Name", field: "FileName", filter: true, flex: 1 },
+      { headerName: "IP Address", field: "IPAddress", filter: true, width: 150 },
       {
         headerName: "AuditData (raw)", field: "AuditDataRaw", flex: 2,
         cellRenderer: params => `<pre style="white-space:pre-wrap;">${params.value}</pre>`
       },
       {
-        headerName: "AuditData (view)", field: "AuditDataView",
+        headerName: "AuditData (view)", field: "AuditDataView", width: 120,
         cellRenderer: params => {
           return `<span class="view-button" data-index="${params.rowIndex}">🔍 View</span>`;
         }
       }
-      
     ];
 
     const gridOptions = {
@@ -58,6 +320,9 @@
         if (event.colDef.field === "AuditDataView") {
           showAuditDetails(event.data.AuditDataRaw);
         }
+      },
+      onGridReady: params => {
+        gridApi = params.api;
       }
     };
 
@@ -79,9 +344,363 @@
         table.appendChild(row);
       }
     }
+    
+    // Filter functions
+    function applyFilters() {
+      const filtered = allRowData.filter(row => {
+        // Operation filter
+        if (currentFilters.operations.size > 0 && !currentFilters.operations.has(row.Operation)) {
+          return false;
+        }
+        
+        // User filter
+        if (currentFilters.users.size > 0 && !currentFilters.users.has(row.UserId)) {
+          return false;
+        }
+        
+        // File name filter
+        if (currentFilters.fileName && !row.FileName.toLowerCase().includes(currentFilters.fileName.toLowerCase())) {
+          return false;
+        }
+        
+        // Site URL filter
+        if (currentFilters.siteUrl && !row.SiteUrl.toLowerCase().includes(currentFilters.siteUrl.toLowerCase())) {
+          return false;
+        }
+        
+        // IP Address filter
+        if (currentFilters.ipAddress && !row.IPAddress.toLowerCase().includes(currentFilters.ipAddress.toLowerCase())) {
+          return false;
+        }
+        
+        // Date range filter
+        if (currentFilters.dateFrom || currentFilters.dateTo) {
+          const rowDate = new Date(row.CreationDate);
+          if (currentFilters.dateFrom) {
+            const fromDate = new Date(currentFilters.dateFrom);
+            if (rowDate < fromDate) return false;
+          }
+          if (currentFilters.dateTo) {
+            const toDate = new Date(currentFilters.dateTo);
+            toDate.setHours(23, 59, 59, 999); // End of day
+            if (rowDate > toDate) return false;
+          }
+        }
+        
+        return true;
+      });
+      
+      if (gridApi) {
+        gridApi.setRowData(filtered);
+      }
+      
+      updateResultsCount(filtered.length);
+      updateActiveFilters();
+      updateURL();
+    }
+    
+    function updateResultsCount(count) {
+      const resultsCount = document.getElementById('resultsCount');
+      resultsCount.textContent = `Showing ${count} of ${allRowData.length} records`;
+    }
+    
+    function updateActiveFilters() {
+      const activeFiltersDiv = document.getElementById('activeFilters');
+      const tags = [];
+      
+      currentFilters.operations.forEach(op => {
+        tags.push(`<span class="filter-tag">Operation: ${op} <span class="remove" data-type="operation" data-value="${op}">×</span></span>`);
+      });
+      
+      currentFilters.users.forEach(user => {
+        tags.push(`<span class="filter-tag">User: ${user} <span class="remove" data-type="user" data-value="${user}">×</span></span>`);
+      });
+      
+      if (currentFilters.fileName) {
+        tags.push(`<span class="filter-tag">File: ${currentFilters.fileName} <span class="remove" data-type="fileName">×</span></span>`);
+      }
+      
+      if (currentFilters.siteUrl) {
+        tags.push(`<span class="filter-tag">Site: ${currentFilters.siteUrl} <span class="remove" data-type="siteUrl">×</span></span>`);
+      }
+      
+      if (currentFilters.ipAddress) {
+        tags.push(`<span class="filter-tag">IP: ${currentFilters.ipAddress} <span class="remove" data-type="ipAddress">×</span></span>`);
+      }
+      
+      if (currentFilters.dateFrom || currentFilters.dateTo) {
+        const dateRange = `${currentFilters.dateFrom || '...'} to ${currentFilters.dateTo || '...'}`;
+        tags.push(`<span class="filter-tag">Date: ${dateRange} <span class="remove" data-type="date">×</span></span>`);
+      }
+      
+      activeFiltersDiv.innerHTML = tags.length > 0 ? tags.join('') : '';
+      
+      // Add event listeners to remove buttons
+      activeFiltersDiv.querySelectorAll('.remove').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const type = e.target.dataset.type;
+          const value = e.target.dataset.value;
+          removeFilter(type, value);
+        });
+      });
+    }
+    
+    function removeFilter(type, value) {
+      switch(type) {
+        case 'operation':
+          currentFilters.operations.delete(value);
+          document.querySelector(`input[data-operation="${value}"]`).checked = false;
+          break;
+        case 'user':
+          currentFilters.users.delete(value);
+          document.querySelector(`input[data-user="${value}"]`).checked = false;
+          break;
+        case 'fileName':
+          currentFilters.fileName = '';
+          document.getElementById('fileNameFilter').value = '';
+          break;
+        case 'siteUrl':
+          currentFilters.siteUrl = '';
+          document.getElementById('siteUrlFilter').value = '';
+          break;
+        case 'ipAddress':
+          currentFilters.ipAddress = '';
+          document.getElementById('ipAddressFilter').value = '';
+          break;
+        case 'date':
+          currentFilters.dateFrom = '';
+          currentFilters.dateTo = '';
+          document.getElementById('dateFrom').value = '';
+          document.getElementById('dateTo').value = '';
+          break;
+      }
+      applyFilters();
+    }
+    
+    function clearAllFilters() {
+      currentFilters.operations.clear();
+      currentFilters.users.clear();
+      currentFilters.fileName = '';
+      currentFilters.siteUrl = '';
+      currentFilters.ipAddress = '';
+      currentFilters.dateFrom = '';
+      currentFilters.dateTo = '';
+      
+      // Clear UI
+      document.querySelectorAll('.filter-option input[type="checkbox"]').forEach(cb => cb.checked = false);
+      document.getElementById('fileNameFilter').value = '';
+      document.getElementById('siteUrlFilter').value = '';
+      document.getElementById('ipAddressFilter').value = '';
+      document.getElementById('ipAddressFilter').value = '';
+      document.getElementById('dateFrom').value = '';
+      document.getElementById('dateTo').value = '';
+      
+      applyFilters();
+    }
+    
+    function buildFacets(data) {
+      // Build operation facets
+      const operations = {};
+      const users = {};
+      
+      data.forEach(row => {
+        operations[row.Operation] = (operations[row.Operation] || 0) + 1;
+        users[row.UserId] = (users[row.UserId] || 0) + 1;
+      });
+      
+      // Populate operation filters
+      const operationFiltersDiv = document.getElementById('operationFilters');
+      operationFiltersDiv.innerHTML = '';
+      Object.entries(operations)
+        .sort((a, b) => b[1] - a[1]) // Sort by count
+        .slice(0, 10) // Show top 10
+        .forEach(([op, count]) => {
+          const div = document.createElement('div');
+          div.className = 'filter-option';
+          div.innerHTML = `
+            <input type="checkbox" id="op_${op}" data-operation="${op}">
+            <label for="op_${op}">${op}</label>
+            <span class="count">(${count})</span>
+          `;
+          operationFiltersDiv.appendChild(div);
+        });
+      
+      // Populate user filters (top 10 initially)
+      const userFiltersDiv = document.getElementById('userFilters');
+      const userFilterInput = document.getElementById('userFilter');
+      
+      function updateUserFilters(searchTerm = '') {
+        userFiltersDiv.innerHTML = '';
+        Object.entries(users)
+          .filter(([user]) => user.toLowerCase().includes(searchTerm.toLowerCase()))
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 10)
+          .forEach(([user, count]) => {
+            const div = document.createElement('div');
+            div.className = 'filter-option';
+            div.innerHTML = `
+              <input type="checkbox" id="user_${user.replace(/[^a-zA-Z0-9]/g, '_')}" data-user="${user}">
+              <label for="user_${user.replace(/[^a-zA-Z0-9]/g, '_')}">${user}</label>
+              <span class="count">(${count})</span>
+            `;
+            userFiltersDiv.appendChild(div);
+          });
+        
+        // Add event listeners to checkboxes
+        userFiltersDiv.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+          cb.addEventListener('change', (e) => {
+            const user = e.target.dataset.user;
+            if (e.target.checked) {
+              currentFilters.users.add(user);
+            } else {
+              currentFilters.users.delete(user);
+            }
+            applyFilters();
+          });
+        });
+      }
+      
+      updateUserFilters();
+      
+      // Debounce user search
+      let userSearchTimeout;
+      userFilterInput.addEventListener('input', (e) => {
+        clearTimeout(userSearchTimeout);
+        userSearchTimeout = setTimeout(() => {
+          updateUserFilters(e.target.value);
+        }, 300);
+      });
+      
+      // Add event listeners to operation checkboxes
+      operationFiltersDiv.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+        cb.addEventListener('change', (e) => {
+          const operation = e.target.dataset.operation;
+          if (e.target.checked) {
+            currentFilters.operations.add(operation);
+          } else {
+            currentFilters.operations.delete(operation);
+          }
+          applyFilters();
+        });
+      });
+    }
+    
+    function updateURL() {
+      const params = new URLSearchParams();
+      
+      if (currentFilters.operations.size > 0) {
+        params.set('operations', Array.from(currentFilters.operations).join(','));
+      }
+      
+      if (currentFilters.users.size > 0) {
+        params.set('users', Array.from(currentFilters.users).join(','));
+      }
+      
+      if (currentFilters.fileName) params.set('fileName', currentFilters.fileName);
+      if (currentFilters.siteUrl) params.set('siteUrl', currentFilters.siteUrl);
+      if (currentFilters.ipAddress) params.set('ipAddress', currentFilters.ipAddress);
+      if (currentFilters.dateFrom) params.set('dateFrom', currentFilters.dateFrom);
+      if (currentFilters.dateTo) params.set('dateTo', currentFilters.dateTo);
+      
+      const newURL = params.toString() ? `?${params.toString()}` : window.location.pathname;
+      window.history.replaceState({}, '', newURL);
+    }
+    
+    function loadFiltersFromURL() {
+      const params = new URLSearchParams(window.location.search);
+      
+      if (params.has('operations')) {
+        params.get('operations').split(',').forEach(op => currentFilters.operations.add(op));
+      }
+      
+      if (params.has('users')) {
+        params.get('users').split(',').forEach(user => currentFilters.users.add(user));
+      }
+      
+      if (params.has('fileName')) {
+        currentFilters.fileName = params.get('fileName');
+        document.getElementById('fileNameFilter').value = currentFilters.fileName;
+      }
+      
+      if (params.has('siteUrl')) {
+        currentFilters.siteUrl = params.get('siteUrl');
+        document.getElementById('siteUrlFilter').value = currentFilters.siteUrl;
+      }
+      
+      if (params.has('ipAddress')) {
+        currentFilters.ipAddress = params.get('ipAddress');
+        document.getElementById('ipAddressFilter').value = currentFilters.ipAddress;
+      }
+      
+      if (params.has('dateFrom')) {
+        currentFilters.dateFrom = params.get('dateFrom');
+        document.getElementById('dateFrom').value = currentFilters.dateFrom;
+      }
+      
+      if (params.has('dateTo')) {
+        currentFilters.dateTo = params.get('dateTo');
+        document.getElementById('dateTo').value = currentFilters.dateTo;
+      }
+    }
 
     document.addEventListener('DOMContentLoaded', () => {
       const gridDiv = document.querySelector('#grid');
+      
+      // Mobile sidebar toggle
+      const toggleBtn = document.getElementById('toggleSidebar');
+      const sidebar = document.getElementById('filterSidebar');
+      const overlay = document.getElementById('sidebarOverlay');
+      
+      toggleBtn.addEventListener('click', () => {
+        sidebar.classList.toggle('open');
+        overlay.classList.toggle('visible');
+      });
+      
+      overlay.addEventListener('click', () => {
+        sidebar.classList.remove('open');
+        overlay.classList.remove('visible');
+      });
+      
+      // Clear all filters button
+      document.getElementById('clearAllFilters').addEventListener('click', clearAllFilters);
+      
+      // Text input filters with debounce
+      let fileNameTimeout, siteUrlTimeout, ipAddressTimeout;
+      
+      document.getElementById('fileNameFilter').addEventListener('input', (e) => {
+        clearTimeout(fileNameTimeout);
+        fileNameTimeout = setTimeout(() => {
+          currentFilters.fileName = e.target.value;
+          applyFilters();
+        }, 300);
+      });
+      
+      document.getElementById('siteUrlFilter').addEventListener('input', (e) => {
+        clearTimeout(siteUrlTimeout);
+        siteUrlTimeout = setTimeout(() => {
+          currentFilters.siteUrl = e.target.value;
+          applyFilters();
+        }, 300);
+      });
+      
+      document.getElementById('ipAddressFilter').addEventListener('input', (e) => {
+        clearTimeout(ipAddressTimeout);
+        ipAddressTimeout = setTimeout(() => {
+          currentFilters.ipAddress = e.target.value;
+          applyFilters();
+        }, 300);
+      });
+      
+      // Date filters
+      document.getElementById('dateFrom').addEventListener('change', (e) => {
+        currentFilters.dateFrom = e.target.value;
+        applyFilters();
+      });
+      
+      document.getElementById('dateTo').addEventListener('change', (e) => {
+        currentFilters.dateTo = e.target.value;
+        applyFilters();
+      });
       
       document.getElementById('upload').addEventListener('change', event => {
         const file = event.target.files[0];
@@ -110,9 +729,23 @@
               };
             });
 
+            allRowData = processedRows;
             gridOptions.rowData = processedRows;
             console.log('row Data: ', processedRows);
             agGrid.createGrid(gridDiv, gridOptions);
+            
+            // Build facets after data is loaded
+            buildFacets(processedRows);
+            
+            // Load filters from URL if any
+            loadFiltersFromURL();
+            
+            // Apply filters based on URL params
+            if (window.location.search) {
+              applyFilters();
+            } else {
+              updateResultsCount(processedRows.length);
+            }
           }
         });
       });
