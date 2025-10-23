@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>🤓 MS365 Audit Viewer</title>
+  <!-- PapaParse -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+  <style>
+    body { font-family: sans-serif; margin: 20px; }
+    #grid { height: 600px; width: 100%; }
+    #upload { margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+  <h2>🤓 Microsoft 365 Audit Viewer</h2>
+  <input type="file" id="upload" accept=".csv" />
+
+  <div id="grid" class="ag-theme-alpine"></div>
+
+  <div id="detailView">
+    <h3>AuditData Details</h3>
+    <table id="detailTable"></table>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/ag-grid-community/dist/ag-grid-community.min.noStyle.js"></script>
+  <script>
+    const columnDefs = [
+      { headerName: "Time", field: "CreationDate", filter: true },
+      { headerName: "User", field: "UserId", filter: true },
+      { headerName: "Operation", field: "Operation", filter: true },
+      { headerName: "Site URL", field: "SiteUrl", filter: true },
+      { headerName: "File Name", field: "FileName", filter: true },
+      { headerName: "IP Address", field: "IPAddress", filter: true },
+      {
+        headerName: "AuditData (raw)", field: "AuditDataRaw", flex: 2,
+        cellRenderer: params => `<pre style="white-space:pre-wrap;">${params.value}</pre>`
+      },
+      {
+        headerName: "AuditData (view)", field: "AuditDataView",
+        cellRenderer: params => {
+          return `<span class="view-button" data-index="${params.rowIndex}">🔍 View</span>`;
+        }
+      }
+      
+    ];
+
+    const gridOptions = {
+      columnDefs,
+      rowData: [],
+      defaultColDef: {
+        sortable: true,
+        resizable: true,
+        filter: 'agTextColumnFilter'
+      },
+      animateRows: true,
+      onCellClicked: event => {
+        if (event.colDef.field === "AuditDataView") {
+          showAuditDetails(event.data.AuditDataRaw);
+        }
+      }
+    };
+
+    function showAuditDetails(jsonStr) {
+      const table = document.getElementById('detailTable');
+      table.innerHTML = ''; // Clear previous
+
+      let data;
+      try {
+        data = JSON.parse(jsonStr || '{}');
+      } catch (e) {
+        table.innerHTML = `<tr><td>Invalid JSON</td></tr>`;
+        return;
+      }
+
+      for (const key in data) {
+        const row = document.createElement('tr');
+        row.innerHTML = `<th>${key}</th><td>${JSON.stringify(data[key])}</td>`;
+        table.appendChild(row);
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const gridDiv = document.querySelector('#grid');
+      
+      document.getElementById('upload').addEventListener('change', event => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        Papa.parse(file, {
+          header: true,
+          skipEmptyLines: true,
+          worker: true,
+          complete: function(results) {
+            const processedRows = results.data.map(row => {
+              let auditData = {};
+              try {
+                auditData = JSON.parse(row.AuditData || '{}');
+                console.log('audit_data: ', auditData);
+              } catch (e) {
+                console.warn("Invalid AuditData JSON:", row.AuditData);
+              }
+
+              return {
+                ...row,
+                SiteUrl: auditData.SiteUrl || '',
+                FileName: auditData.SourceFileName || '',
+                IPAddress: auditData.ClientIP || auditData.IPAddress || '',
+                AuditDataRaw: row.AuditData
+              };
+            });
+
+            gridOptions.rowData = processedRows;
+            console.log('row Data: ', processedRows);
+            agGrid.createGrid(gridDiv, gridOptions);
+          }
+        });
+      });
+    });
+  </script>
+</body>
+</html>
