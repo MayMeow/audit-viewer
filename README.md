@@ -10,6 +10,11 @@ A web-based viewer for Microsoft 365 audit logs with powerful faceted filtering 
 - Responsive design - works on desktop and mobile devices
 - URL-based filter state (shareable filtered views)
 
+📊 **Large File Support**
+- Handles CSV files with hundreds of thousands of rows
+- Chunk-based processing for efficient memory usage
+- Progressive loading with real-time progress updates
+
 ### Filter Types
 
 - **✅ Operation**: Checkbox filters for common operations (FileAccessed, FileModified, FileDeleted, etc.)
@@ -49,6 +54,13 @@ The viewer expects CSV files with these columns:
 ## Technologies
 
 - [AG-Grid Community](https://www.ag-grid.com/) - Data grid
-- [PapaParse](https://www.papaparse.com/) - CSV parsing
+- [PapaParse](https://www.papaparse.com/) - CSV parsing with chunk-based processing for large files
 - Vanilla JavaScript (no build process required)
+
+## Performance
+
+The viewer uses PapaParse's chunk-based parsing to efficiently handle large CSV files:
+- No hard limit on file size or row count (previously limited to ~50,000 rows)
+- Progressive loading keeps the UI responsive during file processing
+- Web Workers offload parsing to a background thread
 
