@@ -239,6 +239,7 @@
       <div class="filter-section">
         <h4>Site URL</h4>
         <input type="text" class="filter-input" id="siteUrlFilter" placeholder="Search site URL..." />
+        <div id="siteUrlFilters"></div>
       </div>
       
       <!-- IP Address Filter -->
@@ -275,10 +276,12 @@
   <script>
     let allRowData = [];
     let gridApi = null;
+    let refreshSiteUrlFacetList = () => {};
     let currentFilters = {
       operations: new Set(),
       users: new Set(),
       fileName: '',
+      siteUrls: new Set(),
       siteUrl: '',
       ipAddress: '',
       dateFrom: '',
@@ -360,8 +363,13 @@
           return false;
         }
         
-        // Site URL filter
+        // Site URL text filter
         if (currentFilters.siteUrl && !row.SiteUrl.toLowerCase().includes(currentFilters.siteUrl.toLowerCase())) {
+          return false;
+        }
+        
+        // Site URL facet filter
+        if (currentFilters.siteUrls.size > 0 && !currentFilters.siteUrls.has(row.SiteUrl || '')) {
           return false;
         }
         
@@ -418,8 +426,13 @@
       }
       
       if (currentFilters.siteUrl) {
-        tags.push(`<span class="filter-tag">Site: ${currentFilters.siteUrl} <span class="remove" data-type="siteUrl">×</span></span>`);
+        tags.push(`<span class="filter-tag">Site contains: ${currentFilters.siteUrl} <span class="remove" data-type="siteUrlText">×</span></span>`);
       }
+      
+      currentFilters.siteUrls.forEach(site => {
+        const label = site || '(empty)';
+        tags.push(`<span class="filter-tag">Site: ${label} <span class="remove" data-type="siteUrl" data-value="${site}">×</span></span>`);
+      });
       
       if (currentFilters.ipAddress) {
         tags.push(`<span class="filter-tag">IP: ${currentFilters.ipAddress} <span class="remove" data-type="ipAddress">×</span></span>`);
@@ -456,9 +469,18 @@
           currentFilters.fileName = '';
           document.getElementById('fileNameFilter').value = '';
           break;
-        case 'siteUrl':
+        case 'siteUrlText':
           currentFilters.siteUrl = '';
           document.getElementById('siteUrlFilter').value = '';
+          refreshSiteUrlFacetList('');
+          break;
+        case 'siteUrl':
+          currentFilters.siteUrls.delete(value);
+          {
+            const targetValue = value || '';
+            const checkbox = document.querySelector(`input[data-site-url="${targetValue}"]`);
+            if (checkbox) checkbox.checked = false;
+          }
           break;
         case 'ipAddress':
           currentFilters.ipAddress = '';
@@ -478,6 +500,7 @@
       currentFilters.operations.clear();
       currentFilters.users.clear();
       currentFilters.fileName = '';
+      currentFilters.siteUrls.clear();
       currentFilters.siteUrl = '';
       currentFilters.ipAddress = '';
       currentFilters.dateFrom = '';
@@ -488,9 +511,9 @@
       document.getElementById('fileNameFilter').value = '';
       document.getElementById('siteUrlFilter').value = '';
       document.getElementById('ipAddressFilter').value = '';
-      document.getElementById('ipAddressFilter').value = '';
       document.getElementById('dateFrom').value = '';
       document.getElementById('dateTo').value = '';
+      refreshSiteUrlFacetList('');
       
       applyFilters();
     }
@@ -499,10 +522,13 @@
       // Build operation facets
       const operations = {};
       const users = {};
+      const siteUrls = {};
       
       data.forEach(row => {
         operations[row.Operation] = (operations[row.Operation] || 0) + 1;
         users[row.UserId] = (users[row.UserId] || 0) + 1;
+        const siteKey = row.SiteUrl || '';
+        siteUrls[siteKey] = (siteUrls[siteKey] || 0) + 1;
       });
       
       // Populate operation filters
@@ -521,6 +547,66 @@
           `;
           operationFiltersDiv.appendChild(div);
         });
+      
+      // Populate site URL filters
+      const siteUrlFiltersDiv = document.getElementById('siteUrlFilters');
+      const siteUrlFilterInput = document.getElementById('siteUrlFilter');
+      let siteUrlSearchTimeout;
+      
+      function updateSiteUrlFilters(searchTerm = '') {
+        const term = (searchTerm || '').toLowerCase();
+        siteUrlFiltersDiv.innerHTML = '';
+        
+        const sortedEntries = Object.entries(siteUrls).sort((a, b) => b[1] - a[1]);
+        const filteredEntries = sortedEntries.filter(([site]) => site.toLowerCase().includes(term));
+        const limitedEntries = filteredEntries.slice(0, 10);
+        
+        currentFilters.siteUrls.forEach(site => {
+          if (Object.prototype.hasOwnProperty.call(siteUrls, site) && !limitedEntries.some(([s]) => s === site)) {
+            limitedEntries.push([site, siteUrls[site]]);
+          }
+        });
+        
+        limitedEntries.forEach(([site, count]) => {
+          const sanitizedId = site ? site.replace(/[^a-zA-Z0-9]/g, '_') : 'empty';
+          const checkboxId = `site_${sanitizedId}`;
+          const displayValue = site || '(empty)';
+          const isChecked = currentFilters.siteUrls.has(site);
+          const div = document.createElement('div');
+          div.className = 'filter-option';
+          div.innerHTML = `
+            <input type="checkbox" id="${checkboxId}" data-site-url="${site}" ${isChecked ? 'checked' : ''}>
+            <label for="${checkboxId}">${displayValue}</label>
+            <span class="count">(${count})</span>
+          `;
+          siteUrlFiltersDiv.appendChild(div);
+        });
+        
+        siteUrlFiltersDiv.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+          cb.addEventListener('change', (e) => {
+            const site = e.target.dataset.siteUrl || '';
+            if (e.target.checked) {
+              currentFilters.siteUrls.add(site);
+            } else {
+              currentFilters.siteUrls.delete(site);
+            }
+            applyFilters();
+          });
+        });
+      }
+      
+      refreshSiteUrlFacetList = updateSiteUrlFilters;
+      updateSiteUrlFilters();
+      
+      siteUrlFilterInput.addEventListener('input', (e) => {
+        const value = e.target.value;
+        clearTimeout(siteUrlSearchTimeout);
+        siteUrlSearchTimeout = setTimeout(() => {
+          currentFilters.siteUrl = value;
+          updateSiteUrlFilters(value);
+          applyFilters();
+        }, 300);
+      });
       
       // Populate user filters (top 10 initially)
       const userFiltersDiv = document.getElementById('userFilters');
@@ -594,6 +680,7 @@
       }
       
       if (currentFilters.fileName) params.set('fileName', currentFilters.fileName);
+      if (currentFilters.siteUrls.size > 0) params.set('siteUrls', Array.from(currentFilters.siteUrls).join(','));
       if (currentFilters.siteUrl) params.set('siteUrl', currentFilters.siteUrl);
       if (currentFilters.ipAddress) params.set('ipAddress', currentFilters.ipAddress);
       if (currentFilters.dateFrom) params.set('dateFrom', currentFilters.dateFrom);
@@ -605,6 +692,9 @@
     
     function loadFiltersFromURL() {
       const params = new URLSearchParams(window.location.search);
+      
+      currentFilters.siteUrls.clear();
+      currentFilters.siteUrl = '';
       
       if (params.has('operations')) {
         params.get('operations').split(',').forEach(op => currentFilters.operations.add(op));
@@ -619,10 +709,17 @@
         document.getElementById('fileNameFilter').value = currentFilters.fileName;
       }
       
+      if (params.has('siteUrls')) {
+        params.get('siteUrls').split(',').forEach(site => currentFilters.siteUrls.add(site));
+      }
+      
       if (params.has('siteUrl')) {
         currentFilters.siteUrl = params.get('siteUrl');
-        document.getElementById('siteUrlFilter').value = currentFilters.siteUrl;
       }
+      
+      const siteUrlInput = document.getElementById('siteUrlFilter');
+      siteUrlInput.value = currentFilters.siteUrl;
+      refreshSiteUrlFacetList(siteUrlInput.value);
       
       if (params.has('ipAddress')) {
         currentFilters.ipAddress = params.get('ipAddress');
@@ -662,20 +759,12 @@
       document.getElementById('clearAllFilters').addEventListener('click', clearAllFilters);
       
       // Text input filters with debounce
-      let fileNameTimeout, siteUrlTimeout, ipAddressTimeout;
+      let fileNameTimeout, ipAddressTimeout;
       
       document.getElementById('fileNameFilter').addEventListener('input', (e) => {
         clearTimeout(fileNameTimeout);
         fileNameTimeout = setTimeout(() => {
           currentFilters.fileName = e.target.value;
-          applyFilters();
-        }, 300);
-      });
-      
-      document.getElementById('siteUrlFilter').addEventListener('input', (e) => {
-        clearTimeout(siteUrlTimeout);
-        siteUrlTimeout = setTimeout(() => {
-          currentFilters.siteUrl = e.target.value;
           applyFilters();
         }, 300);
       });
