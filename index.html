@@ -277,6 +277,14 @@
     let allRowData = [];
     let gridApi = null;
     let refreshSiteUrlFacetList = () => {};
+    let renderOperationFacetList = () => {};
+    let renderUserFacetList = () => {};
+    let facetsReady = false;
+    const facetCounts = {
+      operations: {},
+      users: {},
+      siteUrls: {}
+    };
     let currentFilters = {
       operations: new Set(),
       users: new Set(),
@@ -345,55 +353,89 @@
       }
     }
     
+    function rowMatchesFilters(row, exclusions = {}) {
+      const rowOperation = row.Operation || '';
+      const rowUser = row.UserId || '';
+      const rowFileName = (row.FileName || '').toLowerCase();
+      const rowSiteUrl = (row.SiteUrl || '').toLowerCase();
+      const rowIpAddress = (row.IPAddress || '').toLowerCase();
+      const fileNameFilter = currentFilters.fileName.toLowerCase();
+      const siteUrlTextFilter = currentFilters.siteUrl.toLowerCase();
+      const ipFilter = currentFilters.ipAddress.toLowerCase();
+
+      if (!exclusions.operations && currentFilters.operations.size > 0 && !currentFilters.operations.has(rowOperation)) {
+        return false;
+      }
+      
+      if (!exclusions.users && currentFilters.users.size > 0 && !currentFilters.users.has(rowUser)) {
+        return false;
+      }
+      
+      if (!exclusions.fileName && currentFilters.fileName) {
+        if (!rowFileName.includes(fileNameFilter)) {
+          return false;
+        }
+      }
+      
+      if (!exclusions.siteUrlText && currentFilters.siteUrl) {
+        if (!rowSiteUrl.includes(siteUrlTextFilter)) {
+          return false;
+        }
+      }
+      
+      if (!exclusions.siteUrls && currentFilters.siteUrls.size > 0 && !currentFilters.siteUrls.has(row.SiteUrl || '')) {
+        return false;
+      }
+      
+      if (!exclusions.ipAddress && currentFilters.ipAddress) {
+        if (!rowIpAddress.includes(ipFilter)) {
+          return false;
+        }
+      }
+      
+      if (!exclusions.date && (currentFilters.dateFrom || currentFilters.dateTo)) {
+        const rowDate = new Date(row.CreationDate);
+        if (currentFilters.dateFrom) {
+          const fromDate = new Date(currentFilters.dateFrom);
+          if (rowDate < fromDate) return false;
+        }
+        if (currentFilters.dateTo) {
+          const toDate = new Date(currentFilters.dateTo);
+          toDate.setHours(23, 59, 59, 999); // End of day
+          if (rowDate > toDate) return false;
+        }
+      }
+      
+      return true;
+    }
+    
+    function getRowsMatchingFilters(exclusions = {}) {
+      return allRowData.filter(row => rowMatchesFilters(row, exclusions));
+    }
+    
+    function computeFacetCounts(rows, selector) {
+      return rows.reduce((acc, row) => {
+        const key = selector(row) || '';
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {});
+    }
+    
+    function updateFacetCounts() {
+      if (!facetsReady) return;
+      facetCounts.operations = computeFacetCounts(getRowsMatchingFilters({ operations: true }), row => row.Operation || '');
+      facetCounts.users = computeFacetCounts(getRowsMatchingFilters({ users: true }), row => row.UserId || '');
+      facetCounts.siteUrls = computeFacetCounts(getRowsMatchingFilters({ siteUrls: true }), row => row.SiteUrl || '');
+      renderOperationFacetList();
+      const userInput = document.getElementById('userFilter');
+      renderUserFacetList(userInput ? userInput.value : '');
+      const siteInput = document.getElementById('siteUrlFilter');
+      refreshSiteUrlFacetList(siteInput ? siteInput.value : '');
+    }
+    
     // Filter functions
     function applyFilters() {
-      const filtered = allRowData.filter(row => {
-        // Operation filter
-        if (currentFilters.operations.size > 0 && !currentFilters.operations.has(row.Operation)) {
-          return false;
-        }
-        
-        // User filter
-        if (currentFilters.users.size > 0 && !currentFilters.users.has(row.UserId)) {
-          return false;
-        }
-        
-        // File name filter
-        if (currentFilters.fileName && !row.FileName.toLowerCase().includes(currentFilters.fileName.toLowerCase())) {
-          return false;
-        }
-        
-        // Site URL text filter
-        if (currentFilters.siteUrl && !row.SiteUrl.toLowerCase().includes(currentFilters.siteUrl.toLowerCase())) {
-          return false;
-        }
-        
-        // Site URL facet filter
-        if (currentFilters.siteUrls.size > 0 && !currentFilters.siteUrls.has(row.SiteUrl || '')) {
-          return false;
-        }
-        
-        // IP Address filter
-        if (currentFilters.ipAddress && !row.IPAddress.toLowerCase().includes(currentFilters.ipAddress.toLowerCase())) {
-          return false;
-        }
-        
-        // Date range filter
-        if (currentFilters.dateFrom || currentFilters.dateTo) {
-          const rowDate = new Date(row.CreationDate);
-          if (currentFilters.dateFrom) {
-            const fromDate = new Date(currentFilters.dateFrom);
-            if (rowDate < fromDate) return false;
-          }
-          if (currentFilters.dateTo) {
-            const toDate = new Date(currentFilters.dateTo);
-            toDate.setHours(23, 59, 59, 999); // End of day
-            if (rowDate > toDate) return false;
-          }
-        }
-        
-        return true;
-      });
+      const filtered = allRowData.filter(row => rowMatchesFilters(row));
       
       if (gridApi) {
         gridApi.setGridOption('rowData', filtered);
@@ -402,6 +444,7 @@
       updateResultsCount(filtered.length);
       updateActiveFilters();
       updateURL();
+      updateFacetCounts();
     }
     
     function updateResultsCount(count) {
@@ -459,11 +502,17 @@
       switch(type) {
         case 'operation':
           currentFilters.operations.delete(value);
-          document.querySelector(`input[data-operation="${value}"]`).checked = false;
+          {
+            const checkbox = document.querySelector(`input[data-operation="${value}"]`);
+            if (checkbox) checkbox.checked = false;
+          }
           break;
         case 'user':
           currentFilters.users.delete(value);
-          document.querySelector(`input[data-user="${value}"]`).checked = false;
+          {
+            const checkbox = document.querySelector(`input[data-user="${value}"]`);
+            if (checkbox) checkbox.checked = false;
+          }
           break;
         case 'fileName':
           currentFilters.fileName = '';
@@ -518,118 +567,90 @@
       applyFilters();
     }
     
-    function buildFacets(data) {
-      // Build operation facets
-      const operations = {};
-      const users = {};
-      const siteUrls = {};
-      
-      data.forEach(row => {
-        operations[row.Operation] = (operations[row.Operation] || 0) + 1;
-        users[row.UserId] = (users[row.UserId] || 0) + 1;
-        const siteKey = row.SiteUrl || '';
-        siteUrls[siteKey] = (siteUrls[siteKey] || 0) + 1;
-      });
-      
-      // Populate operation filters
+    function buildFacets() {
       const operationFiltersDiv = document.getElementById('operationFilters');
-      operationFiltersDiv.innerHTML = '';
-      Object.entries(operations)
-        .sort((a, b) => b[1] - a[1]) // Sort by count
-        .slice(0, 10) // Show top 10
-        .forEach(([op, count]) => {
+      const siteUrlFiltersDiv = document.getElementById('siteUrlFilters');
+      const siteUrlFilterInput = document.getElementById('siteUrlFilter');
+      const userFiltersDiv = document.getElementById('userFilters');
+      const userFilterInput = document.getElementById('userFilter');
+      let siteUrlSearchTimeout;
+      let userSearchTimeout;
+
+      renderOperationFacetList = function() {
+        if (!operationFiltersDiv) return;
+        operationFiltersDiv.innerHTML = '';
+        const sortedEntries = Object.entries(facetCounts.operations)
+          .filter(([, count]) => count > 0)
+          .sort((a, b) => b[1] - a[1]);
+        const visibleEntries = sortedEntries.slice(0, 10);
+
+        currentFilters.operations.forEach(op => {
+          const count = facetCounts.operations[op];
+          if (count > 0 && !visibleEntries.some(([value]) => value === op)) {
+            visibleEntries.push([op, count]);
+          }
+        });
+
+        visibleEntries.forEach(([op, count], index) => {
+          const sanitizedId = op ? op.replace(/[^a-zA-Z0-9]/g, '_') : 'empty';
+          const checkboxId = `op_${index}_${sanitizedId}`;
+          const displayValue = op || '(empty)';
+          const isChecked = currentFilters.operations.has(op);
           const div = document.createElement('div');
           div.className = 'filter-option';
           div.innerHTML = `
-            <input type="checkbox" id="op_${op}" data-operation="${op}">
-            <label for="op_${op}">${op}</label>
+            <input type="checkbox" id="${checkboxId}" data-operation="${op}" ${isChecked ? 'checked' : ''}>
+            <label for="${checkboxId}">${displayValue}</label>
             <span class="count">(${count})</span>
           `;
           operationFiltersDiv.appendChild(div);
         });
-      
-      // Populate site URL filters
-      const siteUrlFiltersDiv = document.getElementById('siteUrlFilters');
-      const siteUrlFilterInput = document.getElementById('siteUrlFilter');
-      let siteUrlSearchTimeout;
-      
-      function updateSiteUrlFilters(searchTerm = '') {
-        const term = (searchTerm || '').toLowerCase();
-        siteUrlFiltersDiv.innerHTML = '';
-        
-        const sortedEntries = Object.entries(siteUrls).sort((a, b) => b[1] - a[1]);
-        const filteredEntries = sortedEntries.filter(([site]) => site.toLowerCase().includes(term));
-        const limitedEntries = filteredEntries.slice(0, 10);
-        
-        currentFilters.siteUrls.forEach(site => {
-          if (Object.prototype.hasOwnProperty.call(siteUrls, site) && !limitedEntries.some(([s]) => s === site)) {
-            limitedEntries.push([site, siteUrls[site]]);
-          }
-        });
-        
-        limitedEntries.forEach(([site, count]) => {
-          const sanitizedId = site ? site.replace(/[^a-zA-Z0-9]/g, '_') : 'empty';
-          const checkboxId = `site_${sanitizedId}`;
-          const displayValue = site || '(empty)';
-          const isChecked = currentFilters.siteUrls.has(site);
-          const div = document.createElement('div');
-          div.className = 'filter-option';
-          div.innerHTML = `
-            <input type="checkbox" id="${checkboxId}" data-site-url="${site}" ${isChecked ? 'checked' : ''}>
-            <label for="${checkboxId}">${displayValue}</label>
-            <span class="count">(${count})</span>
-          `;
-          siteUrlFiltersDiv.appendChild(div);
-        });
-        
-        siteUrlFiltersDiv.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+
+        operationFiltersDiv.querySelectorAll('input[type="checkbox"]').forEach(cb => {
           cb.addEventListener('change', (e) => {
-            const site = e.target.dataset.siteUrl || '';
+            const operation = e.target.dataset.operation;
             if (e.target.checked) {
-              currentFilters.siteUrls.add(site);
+              currentFilters.operations.add(operation);
             } else {
-              currentFilters.siteUrls.delete(site);
+              currentFilters.operations.delete(operation);
             }
             applyFilters();
           });
         });
-      }
-      
-      refreshSiteUrlFacetList = updateSiteUrlFilters;
-      updateSiteUrlFilters();
-      
-      siteUrlFilterInput.addEventListener('input', (e) => {
-        const value = e.target.value;
-        clearTimeout(siteUrlSearchTimeout);
-        siteUrlSearchTimeout = setTimeout(() => {
-          currentFilters.siteUrl = value;
-          updateSiteUrlFilters(value);
-          applyFilters();
-        }, 300);
-      });
-      
-      // Populate user filters (top 10 initially)
-      const userFiltersDiv = document.getElementById('userFilters');
-      const userFilterInput = document.getElementById('userFilter');
-      
-      function updateUserFilters(searchTerm = '') {
+      };
+
+      renderUserFacetList = function(searchTerm = '') {
+        if (!userFiltersDiv) return;
+        const term = (searchTerm || '').toLowerCase();
         userFiltersDiv.innerHTML = '';
-        Object.entries(users)
-          .filter(([user]) => user.toLowerCase().includes(searchTerm.toLowerCase()))
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 10)
-          .forEach(([user, count]) => {
-            const div = document.createElement('div');
-            div.className = 'filter-option';
-            div.innerHTML = `
-              <input type="checkbox" id="user_${user.replace(/[^a-zA-Z0-9]/g, '_')}" data-user="${user}">
-              <label for="user_${user.replace(/[^a-zA-Z0-9]/g, '_')}">${user}</label>
-              <span class="count">(${count})</span>
-            `;
-            userFiltersDiv.appendChild(div);
-          });
-        
-        // Add event listeners to checkboxes
+        const sortedEntries = Object.entries(facetCounts.users)
+          .filter(([, count]) => count > 0)
+          .filter(([user]) => user.toLowerCase().includes(term))
+          .sort((a, b) => b[1] - a[1]);
+        const visibleEntries = sortedEntries.slice(0, 10);
+
+        currentFilters.users.forEach(user => {
+          const count = facetCounts.users[user];
+          if (count > 0 && !visibleEntries.some(([value]) => value === user)) {
+            visibleEntries.push([user, count]);
+          }
+        });
+
+        visibleEntries.forEach(([user, count], index) => {
+          const sanitizedId = user ? user.replace(/[^a-zA-Z0-9]/g, '_') : 'empty';
+          const checkboxId = `user_${index}_${sanitizedId}`;
+          const isChecked = currentFilters.users.has(user);
+          const labelValue = user || '(empty)';
+          const div = document.createElement('div');
+          div.className = 'filter-option';
+          div.innerHTML = `
+            <input type="checkbox" id="${checkboxId}" data-user="${user}" ${isChecked ? 'checked' : ''}>
+            <label for="${checkboxId}">${labelValue}</label>
+            <span class="count">(${count})</span>
+          `;
+          userFiltersDiv.appendChild(div);
+        });
+
         userFiltersDiv.querySelectorAll('input[type="checkbox"]').forEach(cb => {
           cb.addEventListener('change', (e) => {
             const user = e.target.dataset.user;
@@ -641,31 +662,79 @@
             applyFilters();
           });
         });
-      }
-      
-      updateUserFilters();
-      
-      // Debounce user search
-      let userSearchTimeout;
-      userFilterInput.addEventListener('input', (e) => {
-        clearTimeout(userSearchTimeout);
-        userSearchTimeout = setTimeout(() => {
-          updateUserFilters(e.target.value);
-        }, 300);
-      });
-      
-      // Add event listeners to operation checkboxes
-      operationFiltersDiv.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-        cb.addEventListener('change', (e) => {
-          const operation = e.target.dataset.operation;
-          if (e.target.checked) {
-            currentFilters.operations.add(operation);
-          } else {
-            currentFilters.operations.delete(operation);
+      };
+
+      refreshSiteUrlFacetList = function(searchTerm = '') {
+        if (!siteUrlFiltersDiv) return;
+        const term = (searchTerm || '').toLowerCase();
+        siteUrlFiltersDiv.innerHTML = '';
+
+        const sortedEntries = Object.entries(facetCounts.siteUrls)
+          .filter(([, count]) => count > 0)
+          .filter(([site]) => site.toLowerCase().includes(term))
+          .sort((a, b) => b[1] - a[1]);
+        const limitedEntries = sortedEntries.slice(0, 10);
+
+        currentFilters.siteUrls.forEach(site => {
+          const count = facetCounts.siteUrls[site];
+          if (count > 0 && !limitedEntries.some(([value]) => value === site)) {
+            limitedEntries.push([site, count]);
           }
-          applyFilters();
         });
-      });
+
+        limitedEntries.forEach(([site, count], index) => {
+          const sanitizedId = site ? site.replace(/[^a-zA-Z0-9]/g, '_') : 'empty';
+          const checkboxId = `site_${index}_${sanitizedId}`;
+          const displayValue = site || '(empty)';
+          const isChecked = currentFilters.siteUrls.has(site);
+          const div = document.createElement('div');
+          div.className = 'filter-option';
+          div.innerHTML = `
+            <input type="checkbox" id="${checkboxId}" data-site-url="${site}" ${isChecked ? 'checked' : ''}>
+            <label for="${checkboxId}">${displayValue}</label>
+            <span class="count">(${count})</span>
+          `;
+          siteUrlFiltersDiv.appendChild(div);
+        });
+
+        siteUrlFiltersDiv.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+          cb.addEventListener('change', (e) => {
+            const site = e.target.dataset.siteUrl || '';
+            if (e.target.checked) {
+              currentFilters.siteUrls.add(site);
+            } else {
+              currentFilters.siteUrls.delete(site);
+            }
+            applyFilters();
+          });
+        });
+      };
+
+      if (userFilterInput && !userFilterInput.dataset.listenerAttached) {
+        userFilterInput.dataset.listenerAttached = 'true';
+        userFilterInput.addEventListener('input', (e) => {
+          clearTimeout(userSearchTimeout);
+          userSearchTimeout = setTimeout(() => {
+            renderUserFacetList(e.target.value);
+          }, 300);
+        });
+      }
+
+      if (siteUrlFilterInput && !siteUrlFilterInput.dataset.listenerAttached) {
+        siteUrlFilterInput.dataset.listenerAttached = 'true';
+        siteUrlFilterInput.addEventListener('input', (e) => {
+          const value = e.target.value;
+          clearTimeout(siteUrlSearchTimeout);
+          siteUrlSearchTimeout = setTimeout(() => {
+            currentFilters.siteUrl = value;
+            refreshSiteUrlFacetList(value);
+            applyFilters();
+          }, 300);
+        });
+      }
+
+      facetsReady = true;
+      updateFacetCounts();
     }
     
     function updateURL() {
@@ -841,7 +910,7 @@
             }
             
             // Build facets after all data is loaded
-            buildFacets(allRowData);
+            buildFacets();
             
             // Load filters from URL if any
             loadFiltersFromURL();
